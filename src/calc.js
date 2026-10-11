@@ -24,18 +24,26 @@ function requirePositive(value, name) {
   }
 }
 
+// 단위 글자 정리: 앞뒤 공백 제거 + 마이크로 기호 통일
+// (키보드로 입력하는 µ(U+00B5)와 그리스 문자 μ(U+03BC)는 눈으로는 같지만 컴퓨터는 다른 글자로 봄)
+export function normalizeUnit(unit) {
+  return String(unit).trim().replace(/µ/g, 'μ');
+}
+
 // 용량을 μg/kg/hr 로 변환. 예) 20 μg/kg/min → 1200 μg/kg/hr
 export function doseToStd(value, unit) {
-  if (!(unit in DOSE_TO_STD)) throw new Error(`알 수 없는 용량 단위: ${unit}`);
+  const u = normalizeUnit(unit);
+  if (!Object.hasOwn(DOSE_TO_STD, u)) throw new Error(`알 수 없는 용량 단위: ${unit}`);
   requirePositive(value, '용량');
-  return value * DOSE_TO_STD[unit];
+  return value * DOSE_TO_STD[u];
 }
 
 // 원액 농도를 μg/mL 로 변환. 예) 100 mg/mL → 100000 μg/mL
 export function concToStd(value, unit) {
-  if (!(unit in CONC_TO_STD)) throw new Error(`알 수 없는 농도 단위: ${unit}`);
+  const u = normalizeUnit(unit);
+  if (!Object.hasOwn(CONC_TO_STD, u)) throw new Error(`알 수 없는 농도 단위: ${unit}`);
   requirePositive(value, '원액 농도');
-  return value * CONC_TO_STD[unit];
+  return value * CONC_TO_STD[u];
 }
 
 // 수액 속도를 mL/hr 로 변환. mL/kg/hr 이면 체중을 곱함. 예) 2 mL/kg/hr × 20 kg = 40 mL/hr
@@ -48,6 +56,8 @@ export function rateToMlHr(weight, value, unit) {
 }
 
 // ---------- 2. 공통 계산 ----------
+// 결과 규칙: errors 가 비어 있지 않으면 숫자가 임상적으로 무의미하므로 화면에 결과를 표시하지 말 것.
+// warnings 는 결과와 함께 눈에 띄게 표시할 것.
 
 // 시간당 필요량(μg/hr) = 체중 × 목표 용량
 export function hourlyNeed(weight, doseStd) {
@@ -55,13 +65,14 @@ export function hourlyNeed(weight, doseStd) {
 }
 
 // 용량 범위 밖이면 경고 문구를 돌려줌 (범위가 없으면 경고 없음)
+// 주의: doseRange 의 min/max 도 반드시 μg/kg/hr 로 변환해서 넘길 것 (경계값은 범위 안으로 간주)
 function doseWarnings(doseStd, doseRange) {
   if (!doseRange) return [];
   const warnings = [];
   if (doseStd < doseRange.min || doseStd > doseRange.max) {
     warnings.push({
       code: 'DOSE_OUT_OF_RANGE',
-      message: `용량 ${doseStd.toFixed(3)} μg/kg/hr 이(가) 참고 범위(${doseRange.min}~${doseRange.max}) 밖입니다.`,
+      message: `용량 ${doseStd} μg/kg/hr 이(가) 참고 범위(${doseRange.min}~${doseRange.max} μg/kg/hr) 밖입니다.`,
     });
   }
   return warnings;

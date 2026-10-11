@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  doseToStd, concToStd, rateToMlHr, calcBag, calcSyringe,
+  doseToStd, concToStd, rateToMlHr, calcBag, calcSyringe, normalizeUnit,
 } from '../src/calc.js';
 
 // 소수점 오차를 허용하며 두 숫자가 같은지 비교
@@ -123,4 +123,68 @@ test('잘못된 입력은 오류를 던짐 (0, 음수, 글자, 모르는 단위)
   assert.throws(() => doseToStd(1, 'g/kg/hr'));
   assert.throws(() => concToStd(1, 'ng/mL'));
   assert.throws(() => rateToMlHr(10, 2, 'L/hr'));
+});
+
+// ---------- 추가 검토 테스트 ----------
+test('수액 백: 원액 주입량이 백 용량보다 크면 오류', () => {
+  const r = calcBag({ weight: 50, dose: 100, conc: 1, bagVolume: 100, rate: 10 });
+  assert.ok(r.errors.length > 0);
+});
+
+test('수액 백: 원액 주입량 0.2 mL 미만이면 2단계 희석 경고', () => {
+  const r = calcBag({ weight: 5, dose: 1, conc: 500, bagVolume: 100, rate: 10 });
+  // 농도 0.5 → 총 50 μg → 원액 0.1 mL
+  assertClose(r.drugVolume, 0.1);
+  assert.ok(r.warnings.some((w) => w.code === 'LOW_STOCK_VOLUME'));
+});
+
+test('용량 범위 경계값(최소·최대 정확히 일치)은 경고 없음', () => {
+  const base = { weight: 20, conc: 50, bagVolume: 500, rate: 40, doseRange: { min: 1, max: 3 } };
+  assert.deepEqual(calcBag({ ...base, dose: 1 }).warnings, []);
+  assert.deepEqual(calcBag({ ...base, dose: 3 }).warnings, []);
+  assert.equal(calcBag({ ...base, dose: 3.01 }).warnings[0].code, 'DOSE_OUT_OF_RANGE');
+});
+
+test('단위 표기: µ(마이크로 기호)와 μ(그리스 문자), 앞뒤 공백을 같게 취급', () => {
+  assert.equal(normalizeUnit(' µg/kg/min '), 'μg/kg/min');
+  assertClose(doseToStd(2, 'µg/kg/min'), 120);
+  assertClose(concToStd(50, 'µg/mL'), 50);
+});
+
+test('단위 표기: 객체 내장 이름(toString 등)은 단위로 인정하지 않음', () => {
+  assert.throws(() => doseToStd(1, 'toString'));
+  assert.throws(() => concToStd(1, 'constructor'));
+});
+
+test('시린지: 모르는 계산 방식은 오류', () => {
+  assert.throws(() => calcSyringe({
+    weight: 10, dose: 1, conc: 500, syringeVolume: 20, mode: 'x', rate: 2,
+  }));
+});
+
+test('일관성: 무작위 입력 500회에서 수식 항등식이 항상 성립', () => {
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  for (let i = 0; i < 500; i++) {
+    const weight = rnd(1, 60);
+    const dose = rnd(0.1, 50);
+    const conc = rnd(10, 100000);
+    const rate = rnd(0.5, 200);
+    const vol = rnd(5, 1000);
+
+    // 백: 시간당 투여되는 약물량(농도×속도)은 필요량(체중×용량)과 같아야 함
+    const bag = calcBag({ weight, dose, conc, bagVolume: vol, rate });
+    assertClose(bag.requiredConc * rate / (weight * dose), 1, '백 질량 보존') ;
+    assertClose(bag.drugVolume * conc, bag.totalDrug, '백 원액량×농도=총량');
+
+    // 시린지 B1: 원액 + 희석액 = 시린지 용량
+    const b1 = calcSyringe({ weight, dose, conc, syringeVolume: vol, mode: 'rate', rate });
+    assertClose(b1.drugVolume + b1.diluentVolume, vol, 'B1 부피 합');
+    assertClose(b1.syringeConc * b1.pumpRate / (weight * dose), 1, 'B1 질량 보존');
+
+    // B1 의 농도를 B2 에 넣으면 같은 펌프 속도·같은 결과가 나와야 함
+    const b2 = calcSyringe({ weight, dose, conc, syringeVolume: vol, mode: 'conc', driveConc: b1.syringeConc });
+    assertClose(b2.pumpRate / rate, 1, 'B1↔B2 속도');
+    assertClose(b2.totalDrug / b1.totalDrug, 1, 'B1↔B2 총량');
+    assertClose(b2.duration / b1.duration, 1, 'B1↔B2 시간');
+  }
 });
