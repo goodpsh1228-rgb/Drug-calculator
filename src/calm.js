@@ -44,37 +44,6 @@ function setThemeMode(mode) {
 function storeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function storeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 무시 */ } }
 
-// ---------- 글꼴 시안 (임시): 조합을 눌러 비교. 확정되면 이 블록과 화면의 선택 영역을 삭제 ----------
-const FONT_SETS = {
-  base: { name: '본문 Pretendard · 숫자 JetBrains Mono', css: '' },
-  plex: {
-    name: '본문 IBM Plex Sans KR · 숫자 IBM Plex Mono',
-    css: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap',
-  },
-  noto: {
-    name: '본문 Noto Sans KR · 숫자 Roboto Mono',
-    css: 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Roboto+Mono:wght@500;600&display=swap',
-  },
-  same: { name: '본문·숫자 모두 Pretendard', css: '' },
-};
-function applyFontSet(key) {
-  const set = FONT_SETS[key] ? key : 'base';
-  const root = document.documentElement;
-  if (set === 'base') root.removeAttribute('data-font');
-  else root.setAttribute('data-font', set);
-  const url = FONT_SETS[set].css;
-  if (url && !document.querySelector(`link[data-fontset="${set}"]`)) {
-    const link = document.createElement('link');
-    link.rel = 'stylesheet';
-    link.href = url;
-    link.setAttribute('data-fontset', set);
-    document.head.appendChild(link);
-  }
-  $(`f-${set}`).checked = true;
-  $('fontName').textContent = FONT_SETS[set].name;
-  storeSet('calmFont', set);
-}
-
 // ---------- 상단 알림 (미리보기, 데이터 오류, 불러오기 실패) ----------
 function showNotice(level, text) {
   const box = $('notice');
@@ -102,24 +71,29 @@ function fillDrugs() {
 
 function setFacts(d) {
   const entry = d?.doses[state.species];
-  if (!d) { $('facts').innerHTML = ''; $('drugAlerts').innerHTML = ''; return; }
-  const rows = [];
-  if (entry.banned) {
-    rows.push(['참고 용량', '사용 금지']);
-  } else {
-    rows.push(['참고 용량', `${fmt(entry.min)} – ${fmt(entry.max)} ${entry.unit}`]);
+  if (!d) {
+    $('facts').innerHTML = ''; $('factsExtra').innerHTML = ''; $('factsMore').hidden = true; $('drugAlerts').innerHTML = '';
+    return;
   }
-  rows.push(['원액 농도', `${fmt(d.conc)} ${d.concUnit}`]);
-  rows.push(['가능한 방식', d.method]);
-  rows.push(['출처', d.source || '미기재']);
-  rows.push(['최종 수정일', d.updated || '미기재']);
-  $('facts').innerHTML = rows.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
+  const rows = (list) => list.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
+  // 항상 보이는 핵심 정보
+  $('facts').innerHTML = rows([
+    ['참고 용량', entry.banned ? '사용 금지' : `${fmt(entry.min)} – ${fmt(entry.max)} ${entry.unit}`],
+    ['원액 농도', `${fmt(d.conc)} ${d.concUnit}`],
+  ]);
+  // 접어 두는 정보 (출처와 수정일은 결과 패널 아래에도 표시됨)
+  $('factsExtra').innerHTML = rows([
+    ['가능한 방식', d.method],
+    ['출처', d.source || '미기재'],
+    ['최종 수정일', d.updated || '미기재'],
+  ]);
+  $('factsMore').hidden = false;
 
+  // 경고는 한 줄씩 (아이콘 + 문구). "검수되지 않음"은 결과 패널에만 표시
   const alerts = [];
   if (entry.banned) alerts.push({ level: 'error', text: `이 종(${state.species})에서는 사용 금지 약물입니다.${entry.speciesNote ? ' ' + entry.speciesNote : ''}` });
   else if (entry.speciesNote) alerts.push({ level: 'warn', text: `종별 주의: ${entry.speciesNote}` });
   if (d.caution) alerts.push({ level: 'warn', text: `비호환·주의: ${d.caution}` });
-  if (!d.reviewed) alerts.push({ level: 'warn', text: '검수되지 않은 데이터입니다.' });
   $('drugAlerts').innerHTML = alertsHtml(alerts);
 }
 
@@ -217,7 +191,7 @@ function update() {
         kv: [
           { k: '백 필요 농도', v: fmt(calc.requiredConc), u: 'μg/mL' },
           { k: '총 약물량', v: fmt(calc.totalDrug), u: 'μg' },
-          { k: '지속시간', v: fmt(calc.duration), u: `시간 (${durationText(calc.duration)})` },
+          { k: `지속시간 · ${durationText(calc.duration)}`, v: fmt(calc.duration), u: '시간' },
           { k: '수액 속도', v: fmt(rate), u: `mL/hr · ${fmt(rate / weight)} mL/kg/hr` },
         ],
         alerts: warningsOf(calc, entry, d),
@@ -243,7 +217,7 @@ function update() {
         { k: '시린지 농도', v: fmt(calc.syringeConc), u: 'μg/mL' },
         { k: '총 약물량', v: fmt(calc.totalDrug), u: 'μg' },
         { k: '펌프 속도', v: fmt(calc.pumpRate), u: `mL/hr · ${fmt(calc.pumpRate / weight)} mL/kg/hr` },
-        { k: '지속시간', v: fmt(calc.duration), u: `시간 (${durationText(calc.duration)})` },
+        { k: `지속시간 · ${durationText(calc.duration)}`, v: fmt(calc.duration), u: '시간' },
       ],
       alerts: warningsOf(calc, entry, d),
       meta, steps: syringeSteps({ ...base, syringeVolume, mode: currentSyrMode(), result: calc }),
@@ -267,7 +241,6 @@ function wire() {
     storeSet('theme', r.value);
     setThemeMode(r.value);
   }));
-  document.querySelectorAll('input[name="fontSet"]').forEach((r) => r.addEventListener('change', () => applyFontSet(r.value)));
   document.querySelectorAll('input[name="species"]').forEach((r) => r.addEventListener('change', () => {
     state.species = r.value;
     fillDrugs();
@@ -289,8 +262,6 @@ async function init() {
   const mode = saved === 'light' || saved === 'dark' ? saved : 'auto';
   setThemeMode(mode);
   $(`tm-${mode}`).checked = true;
-  // 글꼴 시안: 주소의 ?font=plex|noto|same 이 우선, 없으면 마지막 선택
-  applyFontSet(new URLSearchParams(location.search).get('font') ?? storeGet('calmFont') ?? 'base');
   wire();
 
   try {

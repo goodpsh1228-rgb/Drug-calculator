@@ -37,7 +37,7 @@ function contrast(a, b) {
 // 글자는 4.5:1 (WCAG AA), 아이콘·테두리 같은 비글자 요소는 3:1
 const PAIRS = [
   ['text', 'card', 4.5], ['text', 'bg', 4.5], ['text2', 'card', 4.5],
-  ['text', 'seg', 4.5], ['on-ink', 'ink', 4.5],
+  ['text', 'seg', 4.5], ['ink', 'card', 3],
   ['accent', 'panel', 4.5],
   ['panel-text', 'panel', 4.5], ['panel-text2', 'panel', 4.5],
   ['amber', 'card', 3], ['red', 'card', 3],
