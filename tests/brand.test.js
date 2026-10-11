@@ -41,7 +41,7 @@ test('SVG 파일: 마크 2종과 파비콘이 유효한 svg 이고 글꼴에 의
   }
 });
 
-for (const page of ['index.html', 'calm.html']) {
+for (const page of ['index.html']) {
   test(`${page}: 파비콘, 홈 화면 아이콘, 홈 화면 이름이 연결되어 있고 파일이 존재함`, () => {
     const html = readFileSync(file(page), 'utf8');
     assert.match(html, /<link rel="icon" href="assets\/brand\/favicon\.svg"/);

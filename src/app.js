@@ -1,172 +1,198 @@
 // 화면 동작: 입력을 읽고 → 계산 로직을 부르고 → 결과를 그린다.
-// 계산은 calc.js, 데이터 검증은 data.js 가 맡고, 이 파일은 "연결"만 한다.
+// 계산은 calc.js, 데이터는 data.js + source-csv.js, 계산 과정 문구는 steps.js 가 맡고,
+// 이 파일은 화면과의 "연결"만 한다.
 import { calcBag, calcSyringe, doseToStd, concToStd, rateToMlHr } from './calc.js';
 import { buildCatalog } from './data.js';
 import { loadCsvFiles } from './source-csv.js';
 import { parseNum, fmt, esc } from './format.js';
 import { bagSteps, syringeSteps } from './steps.js';
 
-// 주소 끝에 ?preview=1 을 붙이면 검수 전(N) 샘플 약물도 보임 (빨간 경고 띠가 항상 표시됨)
+// 주소 끝 ?preview=1 : 검수 전(N) 샘플 약물도 보이게 함 (경고 띠가 항상 표시됨)
 const PREVIEW = new URLSearchParams(location.search).get('preview') === '1';
-
 const $ = (id) => document.getElementById(id);
-const el = {
-  weight: $('weight'), drug: $('drug'), emptyHint: $('emptyHint'), aboutCompact: $('aboutCompact'),
-  doseGroup: $('doseGroup'), dose: $('dose'), doseUnit: $('doseUnit'),
-  methodGroup: $('methodGroup'), bagForm: $('bagForm'), syrForm: $('syrForm'),
-  bagVolume: $('bagVolume'), rate: $('rate'), rateUnitLabel: $('rateUnitLabel'),
-  syringeVolume: $('syringeVolume'), syrInput: $('syrInput'), syrInputUnit: $('syrInputUnit'),
-  syrInputLabel: $('syrInputLabel'), result: $('result'),
-  pumpMin: $('pumpMin'), pumpMax: $('pumpMax'),
+
+// 선 아이콘 (Lucide 스타일 경로를 직접 적음). 색은 CSS 가 정한다
+const ICON = {
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/>',
+  error: '<circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/>',
 };
+const svgIcon = (level) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICON[level === 'error' ? 'error' : 'alert']}</svg>`;
+const alertsHtml = (list) => list
+  .map((a) => `<div class="alert ${a.level}">${svgIcon(a.level)}<span>${esc(a.text)}</span></div>`)
+  .join('');
+const chevron = '<svg class="row-chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>';
 
 let catalog = { drugs: [], issues: [], hiddenUnreviewed: 0 };
-const state = { species: '개', method: '', rateUnit: 'mL/hr', syrMode: 'rate', tab: 'calc', detailId: '' };
-let resultShown = false;
+const state = { species: '개', detailId: '' };
+const notices = [];
 
-// ---------- 아이콘 (작은 선 그림) ----------
-const ICONS = {
-  drop: '<path d="M12 3s6 6.2 6 10.5a6 6 0 0 1-12 0C6 9.2 12 3 12 3Z"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  flask: '<path d="M8 3h8M10 3v6L5 18a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/>',
-  gauge: '<path d="M12 14l4-4"/><path d="M3.3 17a9 9 0 1 1 17.4 0"/>',
-  syringe: '<path d="m18 2 4 4M17 7l3-3M19 9l-8.7 8.7a2.1 2.1 0 0 1-3 0l-1-1a2.1 2.1 0 0 1 0-3L15 5M9 11l4 4M5 19l-3 3M14 4l6 6"/>',
-  chevron: '<path d="m9 6 6 6-6 6"/>',
+const currentDrug = () => catalog.drugs.find((d) => d.id === $('drug').value);
+const drugsForSpecies = () => catalog.drugs
+  .filter((d) => d.doses[state.species])
+  .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
+const plain = (x) => String(Number(x.toFixed(4)));
+const durationText = (h) => {
+  const total = Math.round(h * 60);
+  const hh = Math.floor(total / 60);
+  const mm = total % 60;
+  return hh > 0 ? `${hh}시간 ${mm}분` : `${mm}분`;
 };
-const icon = (name, cls = 'ic') => `<svg class="${cls}" viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`;
-
-// ---------- 도우미 ----------
-const currentDrug = () => catalog.drugs.find((d) => d.id === el.drug.value);
-const plain = (x) => String(Number(x.toFixed(4))); // 입력칸에 넣는 숫자 (쉼표 없음)
-
-// 지속시간 보조 표시: "12시간 30분"
-function durationText(hours) {
-  const total = Math.round(hours * 60);
-  const h = Math.floor(total / 60);
-  const m = total % 60;
-  return h > 0 ? `${h}시간 ${m}분` : `${m}분`;
-}
+const currentMethod = () => document.querySelector('input[name="method"]:checked').value;
+const currentRateUnit = () => document.querySelector('input[name="rateUnit"]:checked').value;
+const currentSyrMode = () => document.querySelector('input[name="syrMode"]:checked').value;
 
 // 저장소를 못 쓰는 환경(사생활 보호 모드 등)에서도 앱은 정상 동작해야 함
-function storeGet(key) { try { return localStorage.getItem(key); } catch { return null; } }
-function storeSet(key, value) { try { localStorage.setItem(key, value); } catch { /* 무시 */ } }
+function storeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
+function storeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 무시 */ } }
 
-// ---------- 화면 모드(라이트/다크) ----------
-function applyTheme(mode) {
-  const root = document.documentElement;
-  if (mode === 'light' || mode === 'dark') root.setAttribute('data-theme', mode);
-  else root.removeAttribute('data-theme'); // 자동: 기기 설정을 따름
+// ---------- 화면 모드 (기기 설정 자동 + 수동) ----------
+function setThemeMode(mode) {
+  if (mode === 'light' || mode === 'dark') document.documentElement.setAttribute('data-theme', mode);
+  else document.documentElement.removeAttribute('data-theme');
+}
+
+// ---------- 상단 알림 (미리보기, 데이터 오류, 불러오기 실패) ----------
+function addNotice(level, text) {
+  notices.push({ level, text });
+  $('notice').innerHTML = alertsHtml(notices);
 }
 
 // ---------- 탭 ----------
 function setTab(name) {
-  state.tab = name;
   ['calc', 'drugs', 'info'].forEach((t) => { $(`view-${t}`).hidden = t !== name; });
   document.querySelectorAll('.tab').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === name)));
-  if (name === 'drugs') { showDrugList(); }
+  if (name === 'drugs') showDrugList();
   if (name === 'info') renderInfo();
   window.scrollTo(0, 0);
 }
 
-// ---------- 종 ----------
+// ---------- 종 (계산 탭과 약물 탭의 선택이 서로 연동됨) ----------
 function setSpecies(value) {
   state.species = value;
   document.querySelectorAll('input[name="species"], input[name="species2"]').forEach((r) => { r.checked = r.value === value; });
-  fillDrugSelect();
+  fillDrugs();
   onDrugChange();
   renderDrugList();
   if (state.detailId) showDrugDetail(state.detailId);
 }
 
-// ---------- 약물 목록 ----------
-function drugsForSpecies() {
-  return catalog.drugs
-    .filter((d) => d.doses[state.species])
-    .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-}
-
+// ---------- 약물 목록과 약물 정보 ----------
 function emptyMessage() {
   let msg = '표시할 약물이 없습니다. 검수완료(Y)된 약물만 표시됩니다.';
-  if (catalog.hiddenUnreviewed > 0) {
-    msg += ` (검수 전 약물 ${catalog.hiddenUnreviewed}개 숨김 · 샘플 확인: 주소 끝에 ?preview=1)`;
-  }
+  if (catalog.hiddenUnreviewed > 0) msg += ` (검수 전 ${catalog.hiddenUnreviewed}개 숨김)`;
   return msg;
 }
 
-function fillDrugSelect() {
-  const previous = el.drug.value;
+function fillDrugs() {
+  const previous = $('drug').value;
   const list = drugsForSpecies();
-  el.drug.innerHTML = '<option value="">선택</option>' + list.map((d) => {
+  $('drug').innerHTML = '<option value="">선택</option>' + list.map((d) => {
     const banned = d.doses[state.species].banned ? ' (사용금지)' : '';
     const unrev = d.reviewed ? '' : ' [미검수]';
     return `<option value="${esc(d.id)}">${esc(d.name)}${banned}${unrev}</option>`;
   }).join('');
-  el.drug.value = list.some((d) => d.id === previous) ? previous : '';
-  el.emptyHint.textContent = emptyMessage();
-  el.emptyHint.hidden = list.length > 0;
+  $('drug').value = list.some((d) => d.id === previous) ? previous : '';
+  $('drugHint').hidden = list.length > 0;
+  $('drugHint').textContent = emptyMessage();
 }
 
-// "About" 영역 스타일의 약물 정보. full=true 면 약물 탭 상세, false 면 계산 탭 요약
-function aboutHtml(d, entry, full) {
-  const kv = (k, v) => `<div class="row"><span class="row-label">${k}</span><span class="row-value">${v}</span></div>`;
-  let h = '';
-  if (entry.banned) {
-    h += `<div class="alert danger">이 종(${esc(state.species)})에서는 사용 금지 약물입니다.${entry.speciesNote ? ' ' + esc(entry.speciesNote) : ''}</div>`;
-  }
-  const rows = [];
-  if (!entry.banned) {
-    rows.push(kv('참고 용량', `<span class="strong">${fmt(entry.min)} – ${fmt(entry.max)}</span><span class="unit">${esc(entry.unit)}</span>`));
-  }
-  rows.push(kv('원액 농도', `<span class="strong">${fmt(d.conc)}</span><span class="unit">${esc(d.concUnit)}</span>`));
-  if (full) {
-    rows.push(kv('가능한 방식', esc(d.method)));
-    if (d.diluents.length) rows.push(kv('호환 희석액', d.diluents.map(esc).join(', ')));
-  }
-  h += `<div class="list" style="margin-top:12px">${rows.join('')}</div>`;
+const rowsHtml = (list) => list.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(v)}</dd></div>`).join('');
 
-  const notes = [];
-  if (!entry.banned && entry.speciesNote) notes.push(`종별 주의: ${entry.speciesNote}`);
-  if (d.caution) notes.push(`비호환·주의: ${d.caution}`);
-  if (notes.length) {
-    if (full) h += '<h2 class="section-title">주의사항</h2>';
-    h += notes.map((n) => `<div class="alert warn">${esc(n)}</div>`).join('');
+// 계산 탭의 약물 정보: 핵심 2줄 + 접이식 3줄, 주의는 한 줄씩 (아이콘 + 문구)
+function setFacts(d) {
+  const entry = d?.doses[state.species];
+  if (!d) {
+    $('facts').innerHTML = ''; $('factsExtra').innerHTML = ''; $('factsMore').hidden = true; $('drugAlerts').innerHTML = '';
+    return;
   }
+  $('facts').innerHTML = rowsHtml([
+    ['참고 용량', entry.banned ? '사용 금지' : `${fmt(entry.min)} – ${fmt(entry.max)} ${entry.unit}`],
+    ['원액 농도', `${fmt(d.conc)} ${d.concUnit}`],
+  ]);
+  $('factsExtra').innerHTML = rowsHtml([
+    ['가능한 방식', d.method],
+    ['출처', d.source || '미기재'],
+    ['최종 수정일', d.updated || '미기재'],
+  ]);
+  $('factsMore').hidden = false;
 
-  if (full) {
-    h += '<h2 class="section-title">출처</h2><div class="list">'
-      + kv('출처', d.source ? esc(d.source) : '<span class="badge warn">미기재</span>')
-      + kv('최종 수정일', esc(d.updated || '미기재'))
-      + kv('검수', d.reviewed ? '완료' : '<span class="badge warn">미검수</span>')
-      + '</div>';
-  } else {
-    h += `<p class="footnote">출처: ${d.source ? esc(d.source) : '미기재'} · 최종 수정일: ${esc(d.updated || '미기재')}`
-      + `${d.reviewed ? '' : ' · 검수되지 않은 데이터'}</p>`;
-  }
-  return h;
+  const alerts = [];
+  if (entry.banned) alerts.push({ level: 'error', text: `이 종(${state.species})에서는 사용 금지 약물입니다.${entry.speciesNote ? ' ' + entry.speciesNote : ''}` });
+  else if (entry.speciesNote) alerts.push({ level: 'warn', text: `종별 주의: ${entry.speciesNote}` });
+  if (d.caution) alerts.push({ level: 'warn', text: `비호환·주의: ${d.caution}` });
+  $('drugAlerts').innerHTML = alertsHtml(alerts);
 }
 
-// 약물 탭: 목록
+function onDrugChange() {
+  const d = currentDrug();
+  setFacts(d);
+  const entry = d?.doses[state.species];
+  $('doseUnit').textContent = d && !entry.banned ? entry.unit : '';
+  if (d && !entry.banned) $('dose').value = plain((entry.min + entry.max) / 2); // 기본값 = 참고 범위 중간
+  // 방식: 시트의 "방식" 칸에 따라 선택 제한
+  const allowed = d ? (d.method === '둘다' ? ['백', '시린지'] : [d.method]) : ['백', '시린지'];
+  $('m-bag').disabled = !allowed.includes('백');
+  $('m-syr').disabled = !allowed.includes('시린지');
+  if (d && !allowed.includes(currentMethod())) {
+    (allowed[0] === '백' ? $('m-bag') : $('m-syr')).checked = true;
+  }
+  syncMethodForms();
+  update();
+}
+
+function syncMethodForms() {
+  const bag = currentMethod() === '백';
+  $('bagForm').hidden = !bag;
+  $('syrForm').hidden = bag;
+  $('rateUnit').textContent = currentRateUnit();
+  const byRate = currentSyrMode() === 'rate';
+  $('syrLabel').textContent = byRate ? '펌프 속도' : '시린지 농도';
+  $('syrUnit').textContent = byRate ? 'mL/hr' : 'μg/mL';
+}
+
+// ---------- 약물 탭: 목록 → 상세 (About 스타일) ----------
 function renderDrugList() {
   const list = drugsForSpecies();
   $('drugList').innerHTML = list.map((d) => {
     const e = d.doses[state.species];
     const sub = e.banned ? '사용금지' : `${fmt(e.min)} – ${fmt(e.max)} ${esc(e.unit)}`;
-    const tags = (e.banned ? ' <span class="badge danger">사용금지</span>' : '')
-      + (d.reviewed ? '' : ' <span class="badge warn">미검수</span>');
+    const tags = (e.banned ? '<span class="badge error">사용금지</span>' : '')
+      + (d.reviewed ? '' : '<span class="badge warn">미검수</span>');
     return `<button type="button" class="row" data-id="${esc(d.id)}">`
-      + `<span class="row-label">${esc(d.name)}${tags}<small>${sub} · ${esc(d.method)}</small></span>`
-      + `${icon('chevron', 'chev')}</button>`;
+      + `<span class="row-label">${esc(d.name)}${tags}<small>${sub} · ${esc(d.method)}</small></span>${chevron}</button>`;
   }).join('');
-  $('drugListEmpty').textContent = emptyMessage();
   $('drugListEmpty').hidden = list.length > 0;
+  $('drugListEmpty').textContent = emptyMessage();
 }
 
 function showDrugList() {
   state.detailId = '';
   $('drugListView').hidden = false;
   $('drugDetailView').hidden = true;
+  $('drugBack').hidden = true;
   $('drugsTitle').textContent = '약물';
   renderDrugList();
+}
+
+function aboutHtml(d, entry) {
+  const kv = (list) => `<section class="card"><dl class="facts">${rowsHtml(list)}</dl></section>`;
+  const dose = [];
+  if (!entry.banned) dose.push(['참고 용량', `${fmt(entry.min)} – ${fmt(entry.max)} ${entry.unit}`]);
+  dose.push(['원액 농도', `${fmt(d.conc)} ${d.concUnit}`], ['가능한 방식', d.method]);
+  if (d.diluents.length) dose.push(['호환 희석액', d.diluents.join(', ')]);
+
+  const notes = [];
+  if (entry.banned) notes.push({ level: 'error', text: `이 종(${state.species})에서는 사용 금지 약물입니다.${entry.speciesNote ? ' ' + entry.speciesNote : ''}` });
+  else if (entry.speciesNote) notes.push({ level: 'warn', text: `종별 주의: ${entry.speciesNote}` });
+  if (d.caution) notes.push({ level: 'warn', text: `비호환·주의: ${d.caution}` });
+
+  return `<div class="group"><h2 class="sec">용량과 농도</h2>${kv(dose)}</div>`
+    + (notes.length ? `<div class="group"><h2 class="sec">주의사항</h2><section class="card"><div class="alerts" style="border:0">${alertsHtml(notes)}</div></section></div>` : '')
+    + `<div class="group"><h2 class="sec">출처</h2>${kv([
+      ['출처', d.source || '미기재'],
+      ['최종 수정일', d.updated || '미기재'],
+      ['검수', d.reviewed ? '완료' : '검수되지 않음'],
+    ])}</div>`;
 }
 
 function showDrugDetail(id) {
@@ -175,229 +201,160 @@ function showDrugDetail(id) {
   state.detailId = id;
   $('drugListView').hidden = true;
   $('drugDetailView').hidden = false;
+  $('drugBack').hidden = false;
   $('drugsTitle').textContent = d.name;
-  $('drugDetail').innerHTML = aboutHtml(d, d.doses[state.species], true);
+  $('drugDetail').innerHTML = aboutHtml(d, d.doses[state.species]);
   $('useDrugBtn').hidden = d.doses[state.species].banned;
 }
 
 // ---------- 정보·출처 탭 ----------
 function renderInfo() {
-  const kv = (k, v) => `<div class="row"><span class="row-label">${k}</span><span class="row-value">${v}</span></div>`;
-  $('dataStatus').innerHTML = kv('표시 중인 약물', `<span class="strong">${catalog.drugs.length}</span><span class="unit">개</span>`)
-    + kv('검수 전이라 숨김', `${catalog.hiddenUnreviewed}<span class="unit">개</span>`)
-    + kv('데이터 오류', catalog.issues.length
-      ? `<span class="badge danger">${catalog.issues.length}건</span>` : '없음');
-  $('issuesList').innerHTML = catalog.issues.map((i) =>
-    `<div class="alert danger">${esc(i.name || i.id)}: ${i.messages.map(esc).join(' / ')}</div>`).join('');
+  const row = (k, v) => `<div class="row"><span class="label">${esc(k)}</span><span class="row-value">${v}</span></div>`;
+  $('dataStatus').innerHTML = row('표시 중인 약물', `${catalog.drugs.length}개`)
+    + row('검수 전이라 숨김', `${catalog.hiddenUnreviewed}개`)
+    + row('데이터 오류', catalog.issues.length ? `<span class="badge error">${catalog.issues.length}건</span>` : '없음');
+  $('issuesList').innerHTML = alertsHtml(catalog.issues.map((i) => ({
+    level: 'error', text: `${i.name || i.id}: ${i.messages.join(' / ')}`,
+  })));
   $('sourceList').innerHTML = catalog.drugs.length
     ? catalog.drugs.map((d) => `<div class="row"><span class="row-label">${esc(d.name)}<small>최종 수정일 ${esc(d.updated || '미기재')}</small></span>`
       + `<span class="row-value">${d.source ? esc(d.source) : '<span class="badge warn">출처 미기재</span>'}</span></div>`).join('')
-    : `<div class="row"><span class="row-label">${esc(emptyMessage())}</span></div>`;
+    : `<div class="row"><span class="label">${esc(emptyMessage())}</span></div>`;
 }
 
-// ---------- 약물 선택 시 ----------
-function onDrugChange() {
+// ---------- 결과 패널 ----------
+function panelEmpty(drugName, text, alerts = []) {
+  $('panelDrug').textContent = drugName || '약물을 선택하세요';
+  $('panelSub').textContent = '';
+  $('mainVal').textContent = '—';
+  $('mainUnit').textContent = 'mL';
+  $('mainLabel').textContent = text;
+  $('kv').innerHTML = '';
+  $('panelAlerts').innerHTML = alertsHtml(alerts);
+  $('meta').textContent = '';
+  $('steps').innerHTML = '';
+}
+
+function panelResult({ drug, sub, main, kv, alerts, meta, steps, mainNote }) {
+  $('panelDrug').textContent = drug;
+  $('panelSub').textContent = sub;
+  $('mainVal').textContent = main;
+  $('mainUnit').textContent = 'mL';
+  $('mainLabel').textContent = mainNote;
+  $('kv').innerHTML = kv.map((x) =>
+    `<div><dt>${esc(x.k)}</dt><dd>${esc(x.v)}<small>${esc(x.u)}</small></dd></div>`).join('');
+  $('panelAlerts').innerHTML = alertsHtml(alerts);
+  $('meta').textContent = meta;
+  $('steps').innerHTML = steps.map((s) =>
+    `<li><div class="st">${esc(s.title)}</div><div class="se">${esc(s.expr)}</div>`
+    + `<div class="sv">= ${esc(s.value)}<small>${esc(s.unit)}</small></div></li>`).join('');
+}
+
+// 계산 경고 + 종별 주의 + 체중 확인 + 미검수 (색만이 아니라 아이콘과 문구로 전달)
+function warningsOf(calc, entry, d, weight) {
+  const list = calc.warnings.map((w) => ({ level: 'warn', text: w.message }));
+  if (entry.speciesNote) list.push({ level: 'warn', text: `종별 주의: ${entry.speciesNote}` });
+  if (weight < 0.2 || weight > 100 || (state.species === '고양이' && weight > 10)) {
+    list.push({ level: 'warn', text: `입력한 체중 ${fmt(weight)} kg 이(가) 이 종의 일반 범위를 벗어났습니다. 단위와 소수점을 확인하세요.` });
+  }
+  if (!d.reviewed) list.push({ level: 'warn', text: '검수되지 않은 데이터입니다.' });
+  return list;
+}
+
+// ---------- 계산 ----------
+function update() {
   const d = currentDrug();
-  const entry = d?.doses[state.species];
-  clearResult();
-
-  el.aboutCompact.innerHTML = d ? aboutHtml(d, entry, false) : '';
-  el.doseGroup.hidden = !d || entry.banned;
-  el.methodGroup.hidden = !d || entry.banned;
-  if (!d || entry.banned) return;
-
-  // 목표 용량 기본값 = 참고 범위의 중간값 (약물 시트에 적힌 단위 그대로)
-  el.dose.value = plain((entry.min + entry.max) / 2);
-  el.doseUnit.textContent = entry.unit;
-
-  // 방식: 시트의 "방식" 칸에 따라 선택 가능한 버튼 제한
-  const allowed = d.method === '둘다' ? ['백', '시린지'] : [d.method];
-  $('m-bag').disabled = !allowed.includes('백');
-  $('m-syr').disabled = !allowed.includes('시린지');
-  if (!allowed.includes(state.method)) state.method = allowed[0];
-  $('m-bag').checked = state.method === '백';
-  $('m-syr').checked = state.method === '시린지';
-  renderMethodForms();
-}
-
-// ---------- 방식별 입력칸 ----------
-function renderMethodForms() {
-  el.bagForm.hidden = state.method !== '백';
-  el.syrForm.hidden = state.method !== '시린지';
-  el.rateUnitLabel.textContent = state.rateUnit;
-  const isRate = state.syrMode === 'rate';
-  el.syrInputUnit.textContent = isRate ? 'mL/hr' : 'μg/mL';
-  el.syrInputLabel.textContent = isRate ? '펌프 속도' : '시린지 농도';
-  syncChips();
-}
-
-function syncChips() {
-  document.querySelectorAll('.chips').forEach((box) => {
-    const input = $(box.dataset.target);
-    box.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === input.value.trim()));
-  });
-}
-
-// ---------- 결과 ----------
-// 입력이 바뀌면 이전 결과는 즉시 지운다 (바뀐 입력과 맞지 않는 숫자가 화면에 남는 것을 막음)
-function clearResult() {
-  if (!resultShown) return;
-  resultShown = false;
-  el.result.innerHTML = '<div class="card"><span class="stat-sub">입력이 변경되었습니다. 다시 계산하세요.</span></div>';
-}
-
-function hint(msg) {
-  resultShown = false;
-  el.result.innerHTML = `<div class="card"><span class="stat-sub">${esc(msg)}</span></div>`;
-}
-
-function statCard(iconName, label, value, unit, sub = '', cls = '', top = '') {
-  return `<section class="card ${cls}">`
-    + `<div class="stat-top">${icon(iconName)}<span>${esc(top || label)}</span></div>`
-    + (top ? `<div class="stat-label">${esc(label)}</div>` : '')
-    + `<div class="num"><span class="n">${esc(value)}</span><span class="u">${esc(unit)}</span></div>`
-    + (sub ? `<div class="stat-sub">${sub}</div>` : '') + '</section>';
-}
-
-function stepsHtml(steps) {
-  return '<h2 class="section-title">계산 과정</h2><div class="list steps">' + steps.map((s) =>
-    `<div class="row"><div class="st">${esc(s.title)}</div>`
-    + `<div class="se">${esc(s.expr)}</div>`
-    + `<div class="sv">= ${esc(s.value)} <span class="u">${esc(s.unit)}</span></div></div>`).join('') + '</div>';
-}
-
-function calculate() {
-  const d = currentDrug();
-  if (!d) { hint('약물을 선택하세요.'); return; }
+  if (!d) return panelEmpty('', '약물을 고르면 결과가 나옵니다');
   const entry = d.doses[state.species];
-  if (entry.banned) { hint('이 종에서는 사용 금지 약물이라 계산하지 않습니다.'); return; }
+  if (entry.banned) return panelEmpty(d.name, '사용 금지 약물이라 계산하지 않습니다');
 
-  const weight = parseNum(el.weight.value);
-  if (!(weight > 0)) { hint('체중을 입력하세요. (숫자만, 0보다 큼)'); return; }
-  const doseInput = parseNum(el.dose.value);
-  if (!(doseInput > 0)) { hint('목표 용량을 입력하세요. (숫자만, 0보다 큼)'); return; }
+  const weight = parseNum($('weight').value);
+  if (!(weight > 0)) return panelEmpty(d.name, '체중을 입력하세요');
+  const doseInput = parseNum($('dose').value);
+  if (!(doseInput > 0)) return panelEmpty(d.name, '목표 용량을 입력하세요');
 
   try {
     const dose = doseToStd(doseInput, entry.unit);
     const conc = concToStd(d.conc, d.concUnit);
     const doseRange = { min: doseToStd(entry.min, entry.unit), max: doseToStd(entry.max, entry.unit) };
-    const base = {
-      weight, doseInput, doseUnit: entry.unit, dose, concInput: d.conc, concUnit: d.concUnit, conc,
-    };
+    const base = { weight, doseInput, doseUnit: entry.unit, dose, concInput: d.conc, concUnit: d.concUnit, conc };
+    const sub = `${state.species} · ${fmt(weight)} kg`;
+    const meta = `출처 ${d.source || '미기재'} · 최종 수정 ${d.updated || '미기재'}`;
+    const errorsOf = (calc) => calc.errors.map((e) => ({ level: 'error', text: e }));
 
-    let resultHtml = '';
-    let calc;
-    if (state.method === '백') {
-      const bagVolume = parseNum(el.bagVolume.value);
-      if (!(bagVolume > 0)) { hint('백 용량을 입력하세요.'); return; }
-      const rateVal = parseNum(el.rate.value);
-      if (!(rateVal > 0)) { hint('수액 속도를 입력하세요.'); return; }
-      const rate = rateToMlHr(weight, rateVal, state.rateUnit);
-      calc = calcBag({ weight, dose, conc, bagVolume, rate, doseRange });
-      if (calc.errors.length === 0) {
-        resultHtml = statCard('drop', '원액 주입량', fmt(calc.drugVolume), 'mL',
-          '백에서 같은 부피를 먼저 빼고 넣기', 'main', `${d.name} · 수액 백`)
-          + '<div class="grid">'
-          + statCard('flask', '백 필요 농도', fmt(calc.requiredConc), 'μg/mL')
-          + statCard('flask', '총 약물량', fmt(calc.totalDrug), 'μg')
-          + statCard('clock', '지속시간', fmt(calc.duration), '시간', esc(durationText(calc.duration)))
-          + statCard('gauge', '수액 속도', fmt(rate), 'mL/hr', `= ${esc(fmt(rate / weight))} mL/kg/hr`)
-          + '</div>'
-          + `<ul class="notes">${calc.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`
-          + stepsHtml(bagSteps({ ...base, bagVolume, rate, result: calc }));
-      }
-    } else {
-      const syringeVolume = parseNum(el.syringeVolume.value);
-      if (!(syringeVolume > 0)) { hint('시린지 용량을 입력하세요.'); return; }
-      const v = parseNum(el.syrInput.value);
-      if (!(v > 0)) { hint(state.syrMode === 'rate' ? '펌프 속도를 입력하세요.' : '시린지 농도를 입력하세요.'); return; }
-      const pm = parseNum(el.pumpMin.value);
-      const pM = parseNum(el.pumpMax.value);
-      const pumpRange = (Number.isFinite(pm) || Number.isFinite(pM))
-        ? { min: Number.isFinite(pm) ? pm : 0, max: Number.isFinite(pM) ? pM : Infinity }
-        : undefined;
-      calc = calcSyringe({
-        weight, dose, conc, syringeVolume, mode: state.syrMode,
-        rate: v, driveConc: v, pumpRange, doseRange,
+    if (currentMethod() === '백') {
+      const bagVolume = parseNum($('bagVolume').value);
+      if (!(bagVolume > 0)) return panelEmpty(d.name, '백 용량을 입력하세요');
+      const rateVal = parseNum($('rate').value);
+      if (!(rateVal > 0)) return panelEmpty(d.name, '수액 속도를 입력하세요');
+      const rate = rateToMlHr(weight, rateVal, currentRateUnit());
+      const calc = calcBag({ weight, dose, conc, bagVolume, rate, doseRange });
+      if (calc.errors.length) return panelEmpty(d.name, '계산할 수 없는 입력입니다', errorsOf(calc));
+      return panelResult({
+        drug: `${d.name} · 수액 백`, sub, main: fmt(calc.drugVolume),
+        mainNote: '원액 주입량 · 백에서 같은 부피를 먼저 빼고 넣기',
+        kv: [
+          { k: '백 필요 농도', v: fmt(calc.requiredConc), u: 'μg/mL' },
+          { k: '총 약물량', v: fmt(calc.totalDrug), u: 'μg' },
+          { k: `지속시간 · ${durationText(calc.duration)}`, v: fmt(calc.duration), u: '시간' },
+          { k: '수액 속도', v: fmt(rate), u: `mL/hr · ${fmt(rate / weight)} mL/kg/hr` },
+        ],
+        alerts: warningsOf(calc, entry, d, weight),
+        meta, steps: bagSteps({ ...base, bagVolume, rate, result: calc }),
       });
-      if (calc.errors.length === 0) {
-        resultHtml = statCard('syringe', '원액 주입량', fmt(calc.drugVolume), 'mL', '', 'main', `${d.name} · 시린지 펌프`)
-          + '<div class="grid">'
-          + statCard('drop', '희석액', fmt(calc.diluentVolume), 'mL')
-          + statCard('flask', '시린지 농도', fmt(calc.syringeConc), 'μg/mL')
-          + statCard('flask', '총 약물량', fmt(calc.totalDrug), 'μg')
-          + statCard('gauge', '펌프 속도', fmt(calc.pumpRate), 'mL/hr', `= ${esc(fmt(calc.pumpRate / weight))} mL/kg/hr`)
-          + statCard('clock', '지속시간', fmt(calc.duration), '시간', esc(durationText(calc.duration)))
-          + '</div>'
-          + stepsHtml(syringeSteps({ ...base, syringeVolume, mode: state.syrMode, result: calc }));
-      }
     }
 
-    resultShown = true;
-    // 오류가 있으면 숫자는 보여주지 않고 오류만 표시
-    if (calc.errors.length > 0) {
-      el.result.innerHTML = '<h2 class="section-title">결과</h2>'
-        + calc.errors.map((e) => `<div class="alert danger">오류: ${esc(e)}</div>`).join('');
-      return;
-    }
-
-    // 경고 모으기: 계산 경고 + 종별 주의 + 체중 확인 + 미검수
-    const warnings = calc.warnings.map((w) => w.message);
-    if (entry.speciesNote) warnings.push(`종별 주의: ${entry.speciesNote}`);
-    if (weight < 0.2 || weight > 100 || (state.species === '고양이' && weight > 10)) {
-      warnings.push(`입력한 체중 ${fmt(weight)} kg 이(가) 이 종의 일반 범위를 벗어났습니다. 단위와 소수점을 확인하세요.`);
-    }
-    if (!d.reviewed) warnings.push('검수되지 않은 데이터입니다.');
-
-    const warnHtml = warnings.map((w) => `<div class="alert warn">경고: ${esc(w)}</div>`).join('');
-    const meta = `<p class="footnote">출처: ${esc(d.source || '미기재')} · 최종 수정일: ${esc(d.updated || '미기재')}<br>`
-      + `<strong>최종 확인은 처방자 책임입니다.</strong></p>`;
-    el.result.innerHTML = '<h2 class="section-title">결과</h2>' + warnHtml + resultHtml + meta;
-    el.result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const syringeVolume = parseNum($('syringeVolume').value);
+    if (!(syringeVolume > 0)) return panelEmpty(d.name, '시린지 용량을 입력하세요');
+    const v = parseNum($('syrInput').value);
+    const byRate = currentSyrMode() === 'rate';
+    if (!(v > 0)) return panelEmpty(d.name, byRate ? '펌프 속도를 입력하세요' : '시린지 농도를 입력하세요');
+    // 장비 설정(정보·출처 탭)의 펌프 속도 범위. 비워 두면 범위 경고는 없음
+    const pm = parseNum($('pumpMin').value);
+    const pM = parseNum($('pumpMax').value);
+    const pumpRange = (Number.isFinite(pm) || Number.isFinite(pM))
+      ? { min: Number.isFinite(pm) ? pm : 0, max: Number.isFinite(pM) ? pM : Infinity }
+      : undefined;
+    const calc = calcSyringe({
+      weight, dose, conc, syringeVolume, mode: currentSyrMode(),
+      rate: v, driveConc: v, pumpRange, doseRange,
+    });
+    if (calc.errors.length) return panelEmpty(d.name, '계산할 수 없는 입력입니다', errorsOf(calc));
+    return panelResult({
+      drug: `${d.name} · 시린지 펌프`, sub, main: fmt(calc.drugVolume),
+      mainNote: '원액 주입량',
+      kv: [
+        { k: '희석액', v: fmt(calc.diluentVolume), u: 'mL' },
+        { k: '시린지 농도', v: fmt(calc.syringeConc), u: 'μg/mL' },
+        { k: '총 약물량', v: fmt(calc.totalDrug), u: 'μg' },
+        { k: '펌프 속도', v: fmt(calc.pumpRate), u: `mL/hr · ${fmt(calc.pumpRate / weight)} mL/kg/hr` },
+        { k: `지속시간 · ${durationText(calc.duration)}`, v: fmt(calc.duration), u: '시간' },
+      ],
+      alerts: warningsOf(calc, entry, d, weight),
+      meta, steps: syringeSteps({ ...base, syringeVolume, mode: currentSyrMode(), result: calc }),
+    });
   } catch (e) {
-    resultShown = true;
-    el.result.innerHTML = `<div class="alert danger">오류: ${esc(e.message)}</div>`;
+    return panelEmpty(d.name, '입력을 확인하세요', [{ level: 'error', text: e.message }]);
   }
 }
 
-// ---------- 이벤트 연결 ----------
+// ---------- 연결과 시작 ----------
 function wire() {
-  // 탭
   document.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
-
-  // 종 (계산 탭과 약물 탭의 선택이 서로 연동됨)
   document.querySelectorAll('input[name="species"], input[name="species2"]').forEach((r) =>
     r.addEventListener('change', () => setSpecies(r.value)));
-  el.drug.addEventListener('change', onDrugChange);
+  $('drug').addEventListener('change', onDrugChange);
 
-  document.querySelectorAll('input[name="method"]').forEach((r) => r.addEventListener('change', () => {
-    state.method = r.value; renderMethodForms(); clearResult();
-  }));
-  document.querySelectorAll('input[name="rateUnit"]').forEach((r) => r.addEventListener('change', () => {
-    state.rateUnit = r.value; renderMethodForms(); clearResult();
-  }));
-  document.querySelectorAll('input[name="syrMode"]').forEach((r) => r.addEventListener('change', () => {
-    state.syrMode = r.value;
-    el.syrInput.value = ''; // 단위가 바뀌므로 이전 값은 지움 (단위 혼동 방지)
-    renderMethodForms(); clearResult();
-  }));
-
-  // 입력 변경 → 이전 결과 지움. Enter(키패드의 완료)는 계산 실행
-  ['weight', 'dose', 'bagVolume', 'rate', 'syringeVolume', 'syrInput'].forEach((id) => {
-    el[id].addEventListener('input', () => { syncChips(); clearResult(); });
-    el[id].addEventListener('keydown', (ev) => {
-      if (ev.key === 'Enter') { ev.preventDefault(); el[id].blur(); calculate(); }
-    });
-  });
+  document.querySelectorAll('input[name="method"], input[name="rateUnit"], input[name="syrMode"]').forEach((r) =>
+    r.addEventListener('change', () => {
+      if (r.name === 'syrMode') $('syrInput').value = ''; // 단위가 바뀌므로 이전 값 지움
+      syncMethodForms();
+      update();
+    }));
+  ['weight', 'dose', 'bagVolume', 'rate', 'syringeVolume', 'syrInput'].forEach((id) =>
+    $(id).addEventListener('input', update));
   ['pumpMin', 'pumpMax'].forEach((id) =>
-    el[id].addEventListener('input', () => { storeSet(id, el[id].value); clearResult(); }));
-
-  document.querySelectorAll('.chips button').forEach((b) => b.addEventListener('click', () => {
-    $(b.parentElement.dataset.target).value = b.dataset.v;
-    syncChips(); clearResult();
-  }));
-
-  $('calcBtn').addEventListener('click', calculate);
+    $(id).addEventListener('input', () => { storeSet(id, $(id).value); update(); }));
 
   // 약물 탭
   $('drugList').addEventListener('click', (ev) => {
@@ -406,39 +363,38 @@ function wire() {
   });
   $('drugBack').addEventListener('click', showDrugList);
   $('useDrugBtn').addEventListener('click', () => {
-    el.drug.value = state.detailId;
+    $('drug').value = state.detailId;
     onDrugChange();
     setTab('calc');
   });
 
   // 화면 모드
-  document.querySelectorAll('input[name="theme"]').forEach((r) => r.addEventListener('change', () => {
+  document.querySelectorAll('input[name="themeMode"]').forEach((r) => r.addEventListener('change', () => {
     storeSet('theme', r.value);
-    applyTheme(r.value);
+    setThemeMode(r.value);
   }));
 }
 
-// ---------- 시작 ----------
 async function init() {
-  $('previewBanner').hidden = !PREVIEW;
-  el.pumpMin.value = storeGet('pumpMin') ?? '';
-  el.pumpMax.value = storeGet('pumpMax') ?? '';
-  const savedTheme = storeGet('theme');
-  const themeMode = savedTheme === 'light' || savedTheme === 'dark' ? savedTheme : 'auto';
-  $(`th-${themeMode}`).checked = true;
+  const saved = storeGet('theme');
+  const mode = saved === 'light' || saved === 'dark' ? saved : 'auto';
+  setThemeMode(mode);
+  $(`tm-${mode}`).checked = true;
+  $('pumpMin').value = storeGet('pumpMin') ?? '';
+  $('pumpMax').value = storeGet('pumpMax') ?? '';
   wire();
+
   try {
     const raw = await loadCsvFiles('data');
     catalog = buildCatalog(raw.drugRows, raw.doseRows, { includeUnreviewed: PREVIEW });
   } catch (e) {
-    $('loadError').hidden = false;
-    $('loadError').textContent = `데이터를 불러오지 못했습니다. ${e.message} (파일을 직접 열지 말고 배포된 주소로 접속하세요.)`;
+    addNotice('error', `데이터를 불러오지 못했습니다. ${e.message} (파일을 직접 열지 말고 배포된 주소로 접속하세요.)`);
   }
-  if (catalog.issues.length > 0) {
-    $('issuesAlert').hidden = false;
-    $('issuesAlert').textContent = `데이터 오류 ${catalog.issues.length}건: 해당 약물은 숨겼습니다. (정보·출처 탭에서 확인)`;
+  if (PREVIEW) addNotice('warn', '미리보기: 검수되지 않은 샘플 데이터입니다. 임상에 사용하지 마세요.');
+  if (catalog.issues.length) {
+    addNotice('error', `데이터 오류 ${catalog.issues.length}건: 해당 약물은 숨김 처리되었습니다. (정보·출처 탭에서 확인)`);
   }
-  fillDrugSelect();
+  fillDrugs();
   onDrugChange();
   renderDrugList();
 }
