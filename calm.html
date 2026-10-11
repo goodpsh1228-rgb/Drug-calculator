@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>약물 계산 (시안)</title>
+  <!-- 저장된 화면 모드(라이트/다크)를 그리기 전에 적용 -->
+  <script>
+    try {
+      var t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* 저장소를 못 쓰면 기기 설정을 따름 */ }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@600&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pretendard@1.3.9/dist/web/static/pretendard.css">
+  <link rel="stylesheet" href="calm.css">
+</head>
+<body>
+<main class="app">
+  <header class="bar">
+    <h1>약물 계산</h1>
+    <div class="seg mini" role="radiogroup" aria-label="화면 모드">
+      <input type="radio" name="themeMode" id="tm-auto" value="auto" checked><label for="tm-auto">자동</label>
+      <input type="radio" name="themeMode" id="tm-light" value="light"><label for="tm-light">라이트</label>
+      <input type="radio" name="themeMode" id="tm-dark" value="dark"><label for="tm-dark">다크</label>
+    </div>
+  </header>
+
+  <div id="notice" hidden></div>
+
+  <!-- 1. 환자 -->
+  <section class="card" aria-label="환자">
+    <div class="row">
+      <span class="label">종</span>
+      <div class="seg inline" role="radiogroup" aria-label="종 선택">
+        <input type="radio" name="species" id="sp-dog" value="개" checked><label for="sp-dog">개</label>
+        <input type="radio" name="species" id="sp-cat" value="고양이"><label for="sp-cat">고양이</label>
+      </div>
+    </div>
+    <label class="row">
+      <span class="label">체중</span>
+      <span class="field"><input id="weight" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span class="unit">kg</span></span>
+    </label>
+  </section>
+
+  <!-- 2. 약물 -->
+  <section class="card" aria-label="약물">
+    <label class="row">
+      <span class="label">약물</span>
+      <span class="field select-wrap">
+        <select id="drug" aria-label="약물 선택"></select>
+        <svg class="chev" viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+      </span>
+    </label>
+    <dl class="facts" id="facts"></dl>
+    <div id="drugAlerts"></div>
+    <p class="hint" id="drugHint" hidden></p>
+  </section>
+
+  <!-- 3. 용량과 방식 -->
+  <section class="card" aria-label="투여 조건">
+    <label class="row">
+      <span class="label">목표 용량</span>
+      <span class="field"><input id="dose" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span class="unit" id="doseUnit"></span></span>
+    </label>
+    <div class="row stack">
+      <div class="seg wide" role="radiogroup" aria-label="방식 선택">
+        <input type="radio" name="method" id="m-bag" value="백" checked><label for="m-bag">수액 백</label>
+        <input type="radio" name="method" id="m-syr" value="시린지"><label for="m-syr">시린지 펌프</label>
+      </div>
+    </div>
+
+    <div id="bagForm">
+      <label class="row">
+        <span class="label">백 용량</span>
+        <span class="field"><input id="bagVolume" type="text" inputmode="decimal" autocomplete="off" value="500"><span class="unit">mL</span></span>
+      </label>
+      <label class="row">
+        <span class="label">수액 속도</span>
+        <span class="field"><input id="rate" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span class="unit" id="rateUnit">mL/hr</span></span>
+      </label>
+      <div class="seg wide" role="radiogroup" aria-label="속도 단위">
+        <input type="radio" name="rateUnit" id="ru-hr" value="mL/hr" checked><label for="ru-hr">mL/hr</label>
+        <input type="radio" name="rateUnit" id="ru-kg" value="mL/kg/hr"><label for="ru-kg">mL/kg/hr</label>
+      </div>
+    </div>
+
+    <div id="syrForm" hidden>
+      <label class="row">
+        <span class="label">시린지 용량</span>
+        <span class="field"><input id="syringeVolume" type="text" inputmode="decimal" autocomplete="off" value="20"><span class="unit">mL</span></span>
+      </label>
+      <div class="seg wide" role="radiogroup" aria-label="먼저 정할 값">
+        <input type="radio" name="syrMode" id="sm-rate" value="rate" checked><label for="sm-rate">펌프 속도 먼저</label>
+        <input type="radio" name="syrMode" id="sm-conc" value="conc"><label for="sm-conc">농도 먼저</label>
+      </div>
+      <label class="row">
+        <span class="label" id="syrLabel">펌프 속도</span>
+        <span class="field"><input id="syrInput" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span class="unit" id="syrUnit">mL/hr</span></span>
+      </label>
+    </div>
+  </section>
+
+  <!-- 4. 결과 디스플레이 패널 (입력 카드보다 크게) -->
+  <section class="panel" aria-live="polite" aria-label="결과">
+    <div class="panel-head">
+      <span id="panelDrug">약물을 선택하세요</span>
+      <span id="panelSub"></span>
+    </div>
+    <div class="main">
+      <span class="big" id="mainVal">—</span><span class="mainUnit" id="mainUnit">mL</span>
+    </div>
+    <div class="main-label" id="mainLabel">원액 주입량</div>
+    <dl class="kv" id="kv"></dl>
+    <div id="panelAlerts"></div>
+    <p class="meta" id="meta"></p>
+  </section>
+
+  <!-- 5. 계산 과정 -->
+  <details class="card steps">
+    <summary>계산 과정 보기</summary>
+    <ol id="steps"></ol>
+  </details>
+
+  <p class="foot">최종 확인은 처방자 책임입니다. 이 계산기는 보조 도구입니다.</p>
+</main>
+<script type="module" src="src/calm.js"></script>
+</body>
+</html>
