@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0b6e6e">
+  <title>수의 약물 계산기</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%8A%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <h1>수의 약물 계산기</h1>
+      <p class="sub">CRI · 희석 · 수액</p>
+    </header>
+
+    <!-- 미검수 샘플 데이터를 보고 있을 때만 나타나는 빨간 띠 -->
+    <div id="previewBanner" class="banner danger" hidden>
+      미리보기 모드: 검수되지 않은 샘플 데이터입니다. 임상에 사용하지 마세요.
+    </div>
+    <div id="loadError" class="banner danger" hidden></div>
+
+    <!-- 1. 환자 -->
+    <section class="card">
+      <h2><span class="num">1</span> 환자</h2>
+      <div class="seg" role="radiogroup" aria-label="종 선택">
+        <input type="radio" name="species" id="sp-dog" value="개" checked><label for="sp-dog">개</label>
+        <input type="radio" name="species" id="sp-cat" value="고양이"><label for="sp-cat">고양이</label>
+      </div>
+      <label class="field">
+        <span class="lbl">체중</span>
+        <span class="inputwrap">
+          <input id="weight" type="text" inputmode="decimal" autocomplete="off" placeholder="예: 20">
+          <span class="unit">kg</span>
+        </span>
+      </label>
+    </section>
+
+    <!-- 2. 약물 -->
+    <section class="card">
+      <h2><span class="num">2</span> 약물</h2>
+      <select id="drug" aria-label="약물 선택"></select>
+      <p id="emptyHint" class="muted" hidden></p>
+      <div id="drugInfo" class="info" hidden></div>
+      <details id="issuesBox" class="issues" hidden>
+        <summary id="issuesSummary"></summary>
+        <ul id="issuesList"></ul>
+      </details>
+    </section>
+
+    <!-- 3. 목표 용량 -->
+    <section class="card" id="doseCard" hidden>
+      <h2><span class="num">3</span> 목표 용량</h2>
+      <label class="field">
+        <span class="lbl">기본값은 참고 범위의 중간값</span>
+        <span class="inputwrap">
+          <input id="dose" type="text" inputmode="decimal" autocomplete="off">
+          <span class="unit big" id="doseUnit"></span>
+        </span>
+      </label>
+    </section>
+
+    <!-- 4. 방식 -->
+    <section class="card" id="methodCard" hidden>
+      <h2><span class="num">4</span> 방식</h2>
+      <div class="seg" role="radiogroup" aria-label="방식 선택">
+        <input type="radio" name="method" id="m-bag" value="백"><label for="m-bag">수액 백</label>
+        <input type="radio" name="method" id="m-syr" value="시린지"><label for="m-syr">시린지 펌프</label>
+      </div>
+
+      <!-- 수액 백 입력 -->
+      <div id="bagForm" hidden>
+        <div class="field">
+          <span class="lbl">백 용량</span>
+          <span class="inputwrap">
+            <input id="bagVolume" type="text" inputmode="decimal" autocomplete="off" value="500">
+            <span class="unit">mL</span>
+          </span>
+          <div class="chips" data-target="bagVolume">
+            <button type="button" data-v="100">100</button>
+            <button type="button" data-v="250">250</button>
+            <button type="button" data-v="500">500</button>
+            <button type="button" data-v="1000">1000</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="lbl">수액 속도</span>
+          <div class="seg small" role="radiogroup" aria-label="수액 속도 단위">
+            <input type="radio" name="rateUnit" id="ru-hr" value="mL/hr" checked><label for="ru-hr">mL/hr</label>
+            <input type="radio" name="rateUnit" id="ru-kg" value="mL/kg/hr"><label for="ru-kg">mL/kg/hr</label>
+          </div>
+          <span class="inputwrap">
+            <input id="rate" type="text" inputmode="decimal" autocomplete="off" placeholder="속도 입력">
+            <span class="unit big" id="rateUnitLabel">mL/hr</span>
+          </span>
+        </div>
+      </div>
+
+      <!-- 시린지 펌프 입력 -->
+      <div id="syrForm" hidden>
+        <div class="field">
+          <span class="lbl">시린지 용량</span>
+          <span class="inputwrap">
+            <input id="syringeVolume" type="text" inputmode="decimal" autocomplete="off" value="20">
+            <span class="unit">mL</span>
+          </span>
+          <div class="chips" data-target="syringeVolume">
+            <button type="button" data-v="5">5</button>
+            <button type="button" data-v="10">10</button>
+            <button type="button" data-v="20">20</button>
+            <button type="button" data-v="30">30</button>
+            <button type="button" data-v="60">60</button>
+          </div>
+        </div>
+        <div class="field">
+          <span class="lbl">먼저 정할 값</span>
+          <div class="seg small" role="radiogroup" aria-label="시린지 계산 방식">
+            <input type="radio" name="syrMode" id="sm-rate" value="rate" checked><label for="sm-rate">펌프 속도</label>
+            <input type="radio" name="syrMode" id="sm-conc" value="conc"><label for="sm-conc">시린지 농도</label>
+          </div>
+          <span class="inputwrap">
+            <input id="syrInput" type="text" inputmode="decimal" autocomplete="off" placeholder="값 입력">
+            <span class="unit big" id="syrInputUnit">mL/hr</span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- 결과 -->
+    <section class="card" id="resultCard" hidden>
+      <h2><span class="num">5</span> 결과</h2>
+      <div id="result"></div>
+    </section>
+
+    <!-- 장비 설정 -->
+    <details class="card settings">
+      <summary>장비 설정 (펌프 속도 범위)</summary>
+      <p class="muted">입력하면 펌프 속도가 이 범위를 벗어날 때 경고합니다. 이 기기에 저장됩니다.</p>
+      <div class="two">
+        <label class="field"><span class="lbl">최소</span>
+          <span class="inputwrap"><input id="pumpMin" type="text" inputmode="decimal" autocomplete="off"><span class="unit">mL/hr</span></span>
+        </label>
+        <label class="field"><span class="lbl">최대</span>
+          <span class="inputwrap"><input id="pumpMax" type="text" inputmode="decimal" autocomplete="off"><span class="unit">mL/hr</span></span>
+        </label>
+      </div>
+    </details>
+
+    <footer class="foot">
+      <strong>최종 확인은 처방자 책임입니다.</strong>
+      이 계산기는 보조 도구이며, 투여 전 용량·농도·단위를 반드시 다시 확인하세요.
+    </footer>
+  </main>
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

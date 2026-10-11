@@ -1,0 +1,9 @@
+id,종,용량최소,용량최대,용량단위,종별주의,사용금지
+fentanyl,개,2,5,μg/kg/hr,,N
+fentanyl,고양이,1,4,μg/kg/hr,(샘플) 고양이는 흥분·불안 가능 - 저용량부터,N
+ketamine,개,2,10,μg/kg/min,,N
+ketamine,고양이,2,10,μg/kg/min,(샘플) 고양이는 신장 배설 의존 - 신질환 주의,N
+lidocaine,개,25,50,μg/kg/min,,N
+lidocaine,고양이,,,μg/kg/min,(샘플) 고양이는 심혈관 억제 위험으로 일반적으로 권장하지 않음,Y
+dexmedetomidine,개,0.5,3,μg/kg/hr,,N
+dexmedetomidine,고양이,0.5,2,μg/kg/hr,,N

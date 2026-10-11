@@ -122,7 +122,7 @@ export function calcBag({ weight, dose, conc, bagVolume, rate, doseRange }) {
     duration,
     removeFromBag: drugVolume, // 백에서 먼저 빼낼 부피
     notes: [
-      `백에서 약물 부피 ${drugVolume.toFixed(3)} mL 를 먼저 빼고 원액을 넣으세요.`,
+      '백에서 원액 주입량과 같은 부피를 먼저 빼고, 그 자리에 원액을 넣으세요.',
       '수액 속도를 바꾸면 반드시 다시 계산하세요.',
     ],
     errors,
