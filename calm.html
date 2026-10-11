@@ -124,6 +124,20 @@
     <ol id="steps"></ol>
   </details>
 
+  <!-- 글꼴 시안 (임시): 확정되면 이 영역은 삭제 -->
+  <section class="card" aria-label="글꼴 시안">
+    <div class="row stack">
+      <span class="label">글꼴 시안 (임시)</span>
+      <div class="seg wide" role="radiogroup" aria-label="글꼴 시안">
+        <input type="radio" name="fontSet" id="f-base" value="base" checked><label for="f-base">기본</label>
+        <input type="radio" name="fontSet" id="f-plex" value="plex"><label for="f-plex">Plex</label>
+        <input type="radio" name="fontSet" id="f-noto" value="noto"><label for="f-noto">Noto</label>
+        <input type="radio" name="fontSet" id="f-same" value="same"><label for="f-same">통일</label>
+      </div>
+      <p class="hint" id="fontName"></p>
+    </div>
+  </section>
+
   <p class="foot">최종 확인은 처방자 책임입니다. 이 계산기는 보조 도구입니다.</p>
 </main>
 <script type="module" src="src/calm.js"></script>

@@ -62,6 +62,24 @@
   --red: #DC2626;
 }
 
+/* ---------- 글꼴: 본문용(--font-body)과 숫자용(--font-num) ----------
+   기본 조합은 아래 :root, 비교용 시안은 data-font 값으로 바꾼다 (화면의 "글꼴 시안" 버튼) */
+:root {
+  --font-body: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, monospace;
+}
+:root[data-font="plex"] {
+  --font-body: "IBM Plex Sans KR", Pretendard, -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, monospace;
+}
+:root[data-font="noto"] {
+  --font-body: "Noto Sans KR", Pretendard, -apple-system, "Apple SD Gothic Neo", system-ui, sans-serif;
+  --font-num: "Roboto Mono", ui-monospace, monospace;
+}
+:root[data-font="same"] {
+  --font-num: Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
+}
+
 /* ---------- 바탕과 공통 ---------- */
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -69,7 +87,7 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 16px/1.5 Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", system-ui, sans-serif;
+  font: 16px/1.5 var(--font-body);
   -webkit-font-smoothing: antialiased;
 }
 [hidden] { display: none !important; }
@@ -105,7 +123,7 @@ h1 { font-size: 20px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
 input[type="text"] {
   width: 100%; max-width: 180px; min-height: 44px; padding: 0;
   border: 0; background: transparent; color: var(--text);
-  font: 600 20px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  font: 600 20px/1.2 var(--font-num);
   text-align: right; font-variant-numeric: tabular-nums;
 }
 input[type="text"]::placeholder { color: var(--text2); }
@@ -118,7 +136,7 @@ input[type="text"]:focus, select:focus { outline: none; }
 select {
   appearance: none; -webkit-appearance: none;
   width: 100%; min-height: 44px; padding: 0 22px 0 0; border: 0; background: transparent;
-  color: var(--text); font: 600 17px Pretendard, sans-serif;
+  color: var(--text); font: 600 17px var(--font-body);
   text-align: right; text-align-last: right; cursor: pointer;
 }
 .chev {
@@ -177,7 +195,7 @@ select {
 .panel-head #panelDrug { color: var(--panel-text); font-weight: 600; font-size: 15px; }
 .panel .main { display: flex; align-items: baseline; gap: 10px; }
 .panel .big {
-  font: 600 64px/1 "JetBrains Mono", ui-monospace, monospace;
+  font: 600 64px/1 var(--font-num);
   color: var(--accent); letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
 }
 .panel .mainUnit { font-size: 22px; color: var(--panel-text2); }
@@ -189,10 +207,10 @@ select {
 .panel .kv div { padding: 10px 0; border-bottom: 1px solid var(--panel-line); min-width: 0; }
 .panel .kv dt { font-size: 13px; color: var(--panel-text2); }
 .panel .kv dd {
-  margin: 2px 0 0; font: 600 20px/1.2 "JetBrains Mono", ui-monospace, monospace;
+  margin: 2px 0 0; font: 600 20px/1.2 var(--font-num);
   color: var(--panel-text); font-variant-numeric: tabular-nums;
 }
-.panel .kv dd small { font: 500 13px Pretendard, sans-serif; color: var(--panel-text2); margin-left: 4px; }
+.panel .kv dd small { font: 500 13px var(--font-body); color: var(--panel-text2); margin-left: 4px; }
 .panel .alert { color: var(--panel-text); margin: 0; }
 .panel .meta { margin: 0; font-size: 12px; color: var(--panel-text2); }
 
@@ -205,9 +223,9 @@ select {
 .steps ol { list-style: none; margin: 0; padding: 0 0 12px; display: grid; gap: 0; }
 .steps li { padding: 10px 0; border-top: 1px solid var(--border); }
 .steps .st { font-size: 13px; color: var(--text2); }
-.steps .se { font: 500 14px/1.5 "JetBrains Mono", ui-monospace, monospace; }
-.steps .sv { font: 600 16px "JetBrains Mono", ui-monospace, monospace; }
-.steps .sv small { font: 500 13px Pretendard, sans-serif; color: var(--text2); margin-left: 4px; }
+.steps .se { font: 500 14px/1.5 var(--font-num); font-variant-numeric: tabular-nums; }
+.steps .sv { font: 600 16px var(--font-num); font-variant-numeric: tabular-nums; }
+.steps .sv small { font: 500 13px var(--font-body); color: var(--text2); margin-left: 4px; }
 
 .foot { margin: 8px 4px 0; font-size: 13px; color: var(--text2); text-align: center; }
 

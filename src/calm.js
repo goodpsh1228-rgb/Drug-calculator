@@ -44,6 +44,37 @@ function setThemeMode(mode) {
 function storeGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function storeSet(k, v) { try { localStorage.setItem(k, v); } catch { /* 무시 */ } }
 
+// ---------- 글꼴 시안 (임시): 조합을 눌러 비교. 확정되면 이 블록과 화면의 선택 영역을 삭제 ----------
+const FONT_SETS = {
+  base: { name: '본문 Pretendard · 숫자 JetBrains Mono', css: '' },
+  plex: {
+    name: '본문 IBM Plex Sans KR · 숫자 IBM Plex Mono',
+    css: 'https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap',
+  },
+  noto: {
+    name: '본문 Noto Sans KR · 숫자 Roboto Mono',
+    css: 'https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;600;700&family=Roboto+Mono:wght@500;600&display=swap',
+  },
+  same: { name: '본문·숫자 모두 Pretendard', css: '' },
+};
+function applyFontSet(key) {
+  const set = FONT_SETS[key] ? key : 'base';
+  const root = document.documentElement;
+  if (set === 'base') root.removeAttribute('data-font');
+  else root.setAttribute('data-font', set);
+  const url = FONT_SETS[set].css;
+  if (url && !document.querySelector(`link[data-fontset="${set}"]`)) {
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = url;
+    link.setAttribute('data-fontset', set);
+    document.head.appendChild(link);
+  }
+  $(`f-${set}`).checked = true;
+  $('fontName').textContent = FONT_SETS[set].name;
+  storeSet('calmFont', set);
+}
+
 // ---------- 상단 알림 (미리보기, 데이터 오류, 불러오기 실패) ----------
 function showNotice(level, text) {
   const box = $('notice');
@@ -236,6 +267,7 @@ function wire() {
     storeSet('theme', r.value);
     setThemeMode(r.value);
   }));
+  document.querySelectorAll('input[name="fontSet"]').forEach((r) => r.addEventListener('change', () => applyFontSet(r.value)));
   document.querySelectorAll('input[name="species"]').forEach((r) => r.addEventListener('change', () => {
     state.species = r.value;
     fillDrugs();
@@ -257,6 +289,8 @@ async function init() {
   const mode = saved === 'light' || saved === 'dark' ? saved : 'auto';
   setThemeMode(mode);
   $(`tm-${mode}`).checked = true;
+  // 글꼴 시안: 주소의 ?font=plex|noto|same 이 우선, 없으면 마지막 선택
+  applyFontSet(new URLSearchParams(location.search).get('font') ?? storeGet('calmFont') ?? 'base');
   wire();
 
   try {
