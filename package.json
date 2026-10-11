@@ -1,0 +1,10 @@
+{
+  "name": "drug-calculator",
+  "version": "0.1.0",
+  "description": "임상용 수의 약물 계산기 (CRI, 희석, 수액)",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
