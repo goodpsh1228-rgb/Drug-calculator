@@ -3,155 +3,205 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0b6e6e">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <title>수의 약물 계산기</title>
+  <!-- 저장된 화면 모드(라이트/다크)를 화면이 그려지기 전에 적용해서 깜빡임을 막음 -->
+  <script>
+    try {
+      var t = localStorage.getItem('theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* 저장소를 못 쓰면 기기 설정을 따름 */ }
+  </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%92%8A%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="app">
-    <header class="top">
-      <h1>수의 약물 계산기</h1>
-      <p class="sub">CRI · 희석 · 수액</p>
-    </header>
+  <div class="app">
+    <!-- 미검수 샘플 데이터를 보고 있을 때 / 데이터 문제가 있을 때만 나타나는 경고 -->
+    <div id="previewBanner" class="alert danger" hidden>미리보기 모드: 검수되지 않은 샘플 데이터입니다. 임상에 사용하지 마세요.</div>
+    <div id="loadError" class="alert danger" hidden></div>
+    <div id="issuesAlert" class="alert danger" hidden></div>
 
-    <!-- 미검수 샘플 데이터를 보고 있을 때만 나타나는 빨간 띠 -->
-    <div id="previewBanner" class="banner danger" hidden>
-      미리보기 모드: 검수되지 않은 샘플 데이터입니다. 임상에 사용하지 마세요.
-    </div>
-    <div id="loadError" class="banner danger" hidden></div>
+    <!-- ===== 탭 1: 계산 ===== -->
+    <main class="view" id="view-calc">
+      <header class="head"><h1>계산기</h1></header>
 
-    <!-- 1. 환자 -->
-    <section class="card">
-      <h2><span class="num">1</span> 환자</h2>
-      <div class="seg" role="radiogroup" aria-label="종 선택">
-        <input type="radio" name="species" id="sp-dog" value="개" checked><label for="sp-dog">개</label>
-        <input type="radio" name="species" id="sp-cat" value="고양이"><label for="sp-cat">고양이</label>
-      </div>
-      <label class="field">
-        <span class="lbl">체중</span>
-        <span class="inputwrap">
-          <input id="weight" type="text" inputmode="decimal" autocomplete="off" placeholder="예: 20">
-          <span class="unit">kg</span>
-        </span>
-      </label>
-    </section>
-
-    <!-- 2. 약물 -->
-    <section class="card">
-      <h2><span class="num">2</span> 약물</h2>
-      <select id="drug" aria-label="약물 선택"></select>
-      <p id="emptyHint" class="muted" hidden></p>
-      <div id="drugInfo" class="info" hidden></div>
-      <details id="issuesBox" class="issues" hidden>
-        <summary id="issuesSummary"></summary>
-        <ul id="issuesList"></ul>
-      </details>
-    </section>
-
-    <!-- 3. 목표 용량 -->
-    <section class="card" id="doseCard" hidden>
-      <h2><span class="num">3</span> 목표 용량</h2>
-      <label class="field">
-        <span class="lbl">기본값은 참고 범위의 중간값</span>
-        <span class="inputwrap">
-          <input id="dose" type="text" inputmode="decimal" autocomplete="off">
-          <span class="unit big" id="doseUnit"></span>
-        </span>
-      </label>
-    </section>
-
-    <!-- 4. 방식 -->
-    <section class="card" id="methodCard" hidden>
-      <h2><span class="num">4</span> 방식</h2>
-      <div class="seg" role="radiogroup" aria-label="방식 선택">
-        <input type="radio" name="method" id="m-bag" value="백"><label for="m-bag">수액 백</label>
-        <input type="radio" name="method" id="m-syr" value="시린지"><label for="m-syr">시린지 펌프</label>
-      </div>
-
-      <!-- 수액 백 입력 -->
-      <div id="bagForm" hidden>
-        <div class="field">
-          <span class="lbl">백 용량</span>
-          <span class="inputwrap">
-            <input id="bagVolume" type="text" inputmode="decimal" autocomplete="off" value="500">
-            <span class="unit">mL</span>
-          </span>
-          <div class="chips" data-target="bagVolume">
-            <button type="button" data-v="100">100</button>
-            <button type="button" data-v="250">250</button>
-            <button type="button" data-v="500">500</button>
-            <button type="button" data-v="1000">1000</button>
+      <div class="group-title">환자</div>
+      <div class="list">
+        <div class="row">
+          <span class="row-label">종</span>
+          <div class="seg" role="radiogroup" aria-label="종 선택">
+            <input type="radio" name="species" id="sp-dog" value="개" checked><label for="sp-dog">개</label>
+            <input type="radio" name="species" id="sp-cat" value="고양이"><label for="sp-cat">고양이</label>
           </div>
         </div>
-        <div class="field">
-          <span class="lbl">수액 속도</span>
-          <div class="seg small" role="radiogroup" aria-label="수액 속도 단위">
+        <label class="row">
+          <span class="row-label">체중</span>
+          <span class="row-value"><input id="weight" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span class="unit">kg</span></span>
+        </label>
+      </div>
+
+      <div class="group-title">약물</div>
+      <div class="list">
+        <label class="row">
+          <span class="row-label">약물</span>
+          <span class="row-value"><select id="drug" aria-label="약물 선택"></select></span>
+        </label>
+      </div>
+      <p id="emptyHint" class="footnote" hidden></p>
+      <div id="aboutCompact"></div>
+
+      <div id="doseGroup" hidden>
+        <div class="group-title">목표 용량</div>
+        <div class="list">
+          <label class="row">
+            <span class="row-label">목표 용량<small>기본값은 참고 범위의 중간값</small></span>
+            <span class="row-value"><input id="dose" type="text" inputmode="decimal" autocomplete="off"><span class="unit" id="doseUnit"></span></span>
+          </label>
+        </div>
+      </div>
+
+      <div id="methodGroup" hidden>
+        <div class="group-title">방식</div>
+        <div class="seg full" role="radiogroup" aria-label="방식 선택">
+          <input type="radio" name="method" id="m-bag" value="백"><label for="m-bag">수액 백</label>
+          <input type="radio" name="method" id="m-syr" value="시린지"><label for="m-syr">시린지 펌프</label>
+        </div>
+
+        <!-- 수액 백 입력 -->
+        <div id="bagForm" hidden>
+          <div class="list">
+            <label class="row">
+              <span class="row-label">백 용량</span>
+              <span class="row-value"><input id="bagVolume" type="text" inputmode="decimal" autocomplete="off" value="500"><span class="unit">mL</span></span>
+            </label>
+            <div class="chips" data-target="bagVolume">
+              <button type="button" data-v="100">100</button>
+              <button type="button" data-v="250">250</button>
+              <button type="button" data-v="500">500</button>
+              <button type="button" data-v="1000">1000</button>
+            </div>
+          </div>
+          <div class="group-title">수액 속도</div>
+          <div class="seg full" role="radiogroup" aria-label="수액 속도 단위">
             <input type="radio" name="rateUnit" id="ru-hr" value="mL/hr" checked><label for="ru-hr">mL/hr</label>
             <input type="radio" name="rateUnit" id="ru-kg" value="mL/kg/hr"><label for="ru-kg">mL/kg/hr</label>
           </div>
-          <span class="inputwrap">
-            <input id="rate" type="text" inputmode="decimal" autocomplete="off" placeholder="속도 입력">
-            <span class="unit big" id="rateUnitLabel">mL/hr</span>
-          </span>
-        </div>
-      </div>
-
-      <!-- 시린지 펌프 입력 -->
-      <div id="syrForm" hidden>
-        <div class="field">
-          <span class="lbl">시린지 용량</span>
-          <span class="inputwrap">
-            <input id="syringeVolume" type="text" inputmode="decimal" autocomplete="off" value="20">
-            <span class="unit">mL</span>
-          </span>
-          <div class="chips" data-target="syringeVolume">
-            <button type="button" data-v="5">5</button>
-            <button type="button" data-v="10">10</button>
-            <button type="button" data-v="20">20</button>
-            <button type="button" data-v="30">30</button>
-            <button type="button" data-v="60">60</button>
+          <div class="list">
+            <label class="row">
+              <span class="row-label">수액 속도</span>
+              <span class="row-value"><input id="rate" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span class="unit" id="rateUnitLabel">mL/hr</span></span>
+            </label>
           </div>
         </div>
-        <div class="field">
-          <span class="lbl">먼저 정할 값</span>
-          <div class="seg small" role="radiogroup" aria-label="시린지 계산 방식">
+
+        <!-- 시린지 펌프 입력 -->
+        <div id="syrForm" hidden>
+          <div class="list">
+            <label class="row">
+              <span class="row-label">시린지 용량</span>
+              <span class="row-value"><input id="syringeVolume" type="text" inputmode="decimal" autocomplete="off" value="20"><span class="unit">mL</span></span>
+            </label>
+            <div class="chips" data-target="syringeVolume">
+              <button type="button" data-v="5">5</button>
+              <button type="button" data-v="10">10</button>
+              <button type="button" data-v="20">20</button>
+              <button type="button" data-v="30">30</button>
+              <button type="button" data-v="60">60</button>
+            </div>
+          </div>
+          <div class="group-title">먼저 정할 값</div>
+          <div class="seg full" role="radiogroup" aria-label="시린지 계산 방식">
             <input type="radio" name="syrMode" id="sm-rate" value="rate" checked><label for="sm-rate">펌프 속도</label>
             <input type="radio" name="syrMode" id="sm-conc" value="conc"><label for="sm-conc">시린지 농도</label>
           </div>
-          <span class="inputwrap">
-            <input id="syrInput" type="text" inputmode="decimal" autocomplete="off" placeholder="값 입력">
-            <span class="unit big" id="syrInputUnit">mL/hr</span>
-          </span>
+          <div class="list">
+            <label class="row">
+              <span class="row-label" id="syrInputLabel">펌프 속도</span>
+              <span class="row-value"><input id="syrInput" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span class="unit" id="syrInputUnit">mL/hr</span></span>
+            </label>
+          </div>
         </div>
+
+        <button type="button" class="btn" id="calcBtn">계산하기</button>
       </div>
-    </section>
 
-    <!-- 결과 -->
-    <section class="card" id="resultCard" hidden>
-      <h2><span class="num">5</span> 결과</h2>
-      <div id="result"></div>
-    </section>
+      <div id="result" aria-live="polite"></div>
+    </main>
 
-    <!-- 장비 설정 -->
-    <details class="card settings">
-      <summary>장비 설정 (펌프 속도 범위)</summary>
-      <p class="muted">입력하면 펌프 속도가 이 범위를 벗어날 때 경고합니다. 이 기기에 저장됩니다.</p>
-      <div class="two">
-        <label class="field"><span class="lbl">최소</span>
-          <span class="inputwrap"><input id="pumpMin" type="text" inputmode="decimal" autocomplete="off"><span class="unit">mL/hr</span></span>
-        </label>
-        <label class="field"><span class="lbl">최대</span>
-          <span class="inputwrap"><input id="pumpMax" type="text" inputmode="decimal" autocomplete="off"><span class="unit">mL/hr</span></span>
-        </label>
+    <!-- ===== 탭 2: 약물 ===== -->
+    <main class="view" id="view-drugs" hidden>
+      <header class="head"><h1 id="drugsTitle">약물</h1></header>
+      <div id="drugListView">
+        <div class="list">
+          <div class="row">
+            <span class="row-label">종</span>
+            <div class="seg" role="radiogroup" aria-label="종 선택">
+              <input type="radio" name="species2" id="sp2-dog" value="개" checked><label for="sp2-dog">개</label>
+              <input type="radio" name="species2" id="sp2-cat" value="고양이"><label for="sp2-cat">고양이</label>
+            </div>
+          </div>
+        </div>
+        <div class="group-title">약물 목록</div>
+        <div class="list" id="drugList"></div>
+        <p id="drugListEmpty" class="footnote" hidden></p>
       </div>
-    </details>
+      <div id="drugDetailView" hidden>
+        <button type="button" class="back" id="drugBack">‹ 약물</button>
+        <div id="drugDetail"></div>
+        <button type="button" class="btn" id="useDrugBtn">이 약물로 계산하기</button>
+      </div>
+    </main>
 
-    <footer class="foot">
-      <strong>최종 확인은 처방자 책임입니다.</strong>
-      이 계산기는 보조 도구이며, 투여 전 용량·농도·단위를 반드시 다시 확인하세요.
-    </footer>
-  </main>
+    <!-- ===== 탭 3: 정보·출처 ===== -->
+    <main class="view" id="view-info" hidden>
+      <header class="head"><h1>정보·출처</h1></header>
+
+      <div class="group-title">화면 모드</div>
+      <div class="seg full" role="radiogroup" aria-label="화면 모드">
+        <input type="radio" name="theme" id="th-auto" value="auto" checked><label for="th-auto">자동</label>
+        <input type="radio" name="theme" id="th-light" value="light"><label for="th-light">라이트</label>
+        <input type="radio" name="theme" id="th-dark" value="dark"><label for="th-dark">다크</label>
+      </div>
+      <p class="footnote">자동은 기기 설정을 따릅니다.</p>
+
+      <div class="group-title">장비 설정 (펌프 속도 범위)</div>
+      <div class="list">
+        <label class="row"><span class="row-label">최소</span>
+          <span class="row-value"><input id="pumpMin" type="text" inputmode="decimal" autocomplete="off" placeholder="미설정"><span class="unit">mL/hr</span></span></label>
+        <label class="row"><span class="row-label">최대</span>
+          <span class="row-value"><input id="pumpMax" type="text" inputmode="decimal" autocomplete="off" placeholder="미설정"><span class="unit">mL/hr</span></span></label>
+      </div>
+      <p class="footnote">입력하면 펌프 속도가 이 범위를 벗어날 때 경고합니다. 이 기기에만 저장됩니다.</p>
+
+      <h2 class="section-title">데이터 상태</h2>
+      <div class="list" id="dataStatus"></div>
+      <div id="issuesList"></div>
+
+      <h2 class="section-title">약물별 출처</h2>
+      <div class="list" id="sourceList"></div>
+
+      <h2 class="section-title">안내</h2>
+      <div class="card">
+        <p style="margin:0"><strong>최종 확인은 처방자 책임입니다.</strong></p>
+        <p class="stat-sub" style="margin:6px 0 0">이 계산기는 보조 도구입니다. 투여 전 용량·농도·단위를 반드시 다시 확인하세요. 검수완료(Y)된 약물만 표시되며, 데이터에 오류가 있는 약물은 숨겨집니다.</p>
+      </div>
+    </main>
+
+    <!-- 하단 탭바 -->
+    <nav class="tabbar" role="tablist" aria-label="메뉴">
+      <button class="tab" role="tab" data-tab="calc" aria-selected="true">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="3"/><path d="M8 7h8M8 12h.01M12 12h.01M16 12h.01M8 16h.01M12 16h.01M16 16h.01"/></svg>계산
+      </button>
+      <button class="tab" role="tab" data-tab="drugs" aria-selected="false">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m10.5 20.5-7-7a4.9 4.9 0 0 1 7-7l7 7a4.9 4.9 0 0 1-7 7Z"/><path d="m8.5 8.5 7 7"/></svg>약물
+      </button>
+      <button class="tab" role="tab" data-tab="info" aria-selected="false">
+        <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8h.01"/></svg>정보·출처
+      </button>
+    </nav>
+  </div>
   <script type="module" src="src/app.js"></script>
 </body>
 </html>
